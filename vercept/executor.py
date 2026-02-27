@@ -40,6 +40,7 @@ class Executor:
             "select_all": lambda: self._select_all(params, screen_width, screen_height),
             "file_select": lambda: self._file_select(params),
             "window_switch": lambda: self._window_switch(params),
+            "navigate": lambda: self._navigate(params),
             "form_fill": lambda: self._form_fill(params, screen_width, screen_height),
             "wait": lambda: self._wait(params),
             "done": lambda: "task_complete",
@@ -360,6 +361,37 @@ class Executor:
             return f"window_switch timeout: {app_name}"
         except Exception as e:
             return f"window_switch error: {e}"
+
+    # ── Browser navigation ──────────────────────────────────────────────
+
+    def _navigate(self, params: dict) -> str:
+        """Navigate the active browser to a URL or perform a search.
+
+        Uses Cmd+L to focus the address bar, which works in Safari, Chrome,
+        and Firefox regardless of what is currently focused on the page.
+        This is the only reliable way to enter a URL after window_switch:
+        clicking the address bar by coordinate is fragile because the bar's
+        exact position varies with window size and display resolution.
+        """
+        url = params.get("url", "")
+        if not url:
+            return "navigate: no url specified"
+
+        # Cmd+L focuses the browser address bar in all major macOS browsers
+        pyautogui.hotkey("command", "l")
+        time.sleep(0.4)  # wait for the bar to receive focus
+
+        # Select any existing URL so the paste replaces it cleanly
+        pyautogui.hotkey("command", "a")
+        time.sleep(0.05)
+
+        # Paste destination via clipboard for full Unicode support
+        if not self._paste_via_clipboard(url):
+            pyautogui.write(url, interval=0.03)
+        time.sleep(0.2)
+
+        pyautogui.press("return")
+        return f"navigate: {url}"
 
     # ── Form fill ───────────────────────────────────────────────────────
 
