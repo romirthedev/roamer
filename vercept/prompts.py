@@ -81,7 +81,7 @@ Available actions and their param schemas:
 - file_select:    {{"file_path": "/path/to/file"}}  (for open/save file dialogs)
 - window_switch:  {{"app_name": "Safari"}}  (bring app to front via AppleScript)
 - navigate:       {{"url": "https://example.com"}}  (opens URL in default browser via macOS open; works from any app. Also accepts bare search terms like "python docs". Handles mailto: links too.)
-- compose_email:  {{"to": "user@example.com", "subject": "Subject line", "body": "Full email body text"}}  (opens Gmail compose window pre-filled; no clicking required)
+- compose_email:  {{"to": "user@example.com", "subject": "Subject line", "body": "Full email body text"}}  (opens a new email compose window in the system default mail client via mailto:; no clicking required)
 - form_fill:      {{"fields": [{{"x": int, "y": int, "text": "value"}}, ...]}}
 - wait:           {{"seconds": 1.0}}
 - done:           {{}}  (set is_final: true)
@@ -103,15 +103,6 @@ GUIDELINES:
   directly — you do NOT need to call window_switch first. navigate uses the macOS
   `open` command which works from any app state and opens in the default browser.
   NEVER use type, click, or hotkey to enter an address bar manually.
-- SENDING EMAIL: Always use compose_email for any task involving writing or sending
-  an email. It opens Gmail's compose window with To, Subject, and Body pre-filled
-  via URL — no clicking the Compose button or individual fields required.
-  After compose_email succeeds, click Send or use hotkey Cmd+Enter to send.
-- EMAIL BODY QUALITY: When composing an email on behalf of the user, write a
-  complete, warm, and natural message. Expand the user's brief request into a
-  proper email: include a friendly greeting, clearly state the purpose, provide
-  relevant details (time, place, context), and end with an appropriate sign-off.
-  Do not relay bare facts — write the way a person would.
 - Use form_fill to fill multiple fields in one action (more efficient for forms).
 - For scroll: supply x/y when you want to scroll a specific region (e.g. a sidebar).
   Without x/y, scrolls wherever the cursor is currently positioned.
