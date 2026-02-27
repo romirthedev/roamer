@@ -17,7 +17,12 @@ from vercept.prompts import (
 class Planner:
     def __init__(self, config: VerceptConfig):
         self.config = config
-        self.client = OpenAI(api_key=config.openai_api_key)
+        # Apply action_timeout so a hung API call doesn't stall the agent
+        # indefinitely.  The config default is 30s; the SDK default is 600s.
+        self.client = OpenAI(
+            api_key=config.openai_api_key,
+            timeout=config.action_timeout,
+        )
 
     def next_action(
         self, instruction: str, screen: ScreenState, memory: TaskMemory

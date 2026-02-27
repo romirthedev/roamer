@@ -7,8 +7,6 @@ from dataclasses import dataclass, field
 class TaskMemory:
     instruction: str
     actions_taken: list[dict] = field(default_factory=list)
-    retry_count: int = 0
-    max_retries: int = 3
     task_id: str = field(default_factory=lambda: str(uuid.uuid4())[:8])
     started_at: float = field(default_factory=time.time)
     completed: bool = False
@@ -26,7 +24,6 @@ class TaskMemory:
         self,
         action: dict,
         result: str,
-        screenshot_b64: str = "",
         success: bool = True,
         neutral: bool = False,
     ) -> None:
@@ -43,7 +40,6 @@ class TaskMemory:
             "params": action.get("params", {}),
             "reasoning": action.get("reasoning", ""),
             "result": result,
-            "screenshot_b64": screenshot_b64,
             "success": success,
             "timestamp": time.time(),
         }
@@ -58,7 +54,7 @@ class TaskMemory:
                 self.failed_actions.clear()
 
     def get_context_window(self, last_n: int = 5) -> list[dict]:
-        """Return the last N actions for LLM context (without screenshots to save tokens)."""
+        """Return the last N actions for LLM context."""
         recent = self.actions_taken[-last_n:]
         return [
             {
@@ -95,9 +91,6 @@ class TaskMemory:
             )
         return "\n".join(lines)
 
-    def reset_retries(self) -> None:
-        self.retry_count = 0
-
     @property
     def action_count(self) -> int:
         return len(self.actions_taken)
@@ -107,21 +100,21 @@ class TaskMemory:
         return time.time() - self.started_at
 
     def to_dict(self) -> dict:
-        """Serialize for session persistence (strips screenshots to save space)."""
-        actions = []
-        for a in self.actions_taken:
-            actions.append({
-                "action_type": a["action_type"],
-                "params": a["params"],
-                "reasoning": a["reasoning"],
-                "result": a["result"],
-                "success": a.get("success", True),
-                "timestamp": a.get("timestamp", 0),
-            })
+        """Serialize for session persistence."""
         return {
             "task_id": self.task_id,
             "instruction": self.instruction,
-            "actions": actions,
+            "actions": [
+                {
+                    "action_type": a["action_type"],
+                    "params": a["params"],
+                    "reasoning": a["reasoning"],
+                    "result": a["result"],
+                    "success": a.get("success", True),
+                    "timestamp": a.get("timestamp", 0),
+                }
+                for a in self.actions_taken
+            ],
             "action_count": self.action_count,
             "started_at": self.started_at,
             "completed": self.completed,
@@ -144,7 +137,6 @@ class TaskMemory:
                 "params": a.get("params", {}),
                 "reasoning": a.get("reasoning", ""),
                 "result": a.get("result", ""),
-                "screenshot_b64": "",
                 "success": a.get("success", True),
                 "timestamp": a.get("timestamp", 0),
             })

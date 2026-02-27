@@ -58,6 +58,13 @@ class Agent:
         # Initial screen capture
         console.print("[dim]Capturing screen...[/dim]")
         screen = self.perception.capture()
+
+        if screen.perception_failed:
+            console.print(
+                "[red]Initial screen analysis failed. Cannot start task.[/red]"
+            )
+            return
+
         self._log_screen(screen)
 
         # Safety: check the currently active app
@@ -270,6 +277,19 @@ class Agent:
             console.print("[dim]Verifying...[/dim]")
             new_screen = self.perception.capture()
 
+            # If perception failed, count it as a failure and keep the last
+            # known-good screen state for context on the next planning pass.
+            # This prevents the agent from looping indefinitely on wait
+            # actions whose heuristic verification always returns success.
+            if new_screen.perception_failed:
+                console.print(
+                    "[yellow]Screen analysis failed — counting as step failure.[/yellow]"
+                )
+                memory.add_action(action, result="perception_failed", success=False)
+                # Do not update screen — preserve last known-good state
+                console.print()
+                continue
+
             # Try fast-path heuristic verification first
             verification = quick_verify(
                 screen,
@@ -289,11 +309,11 @@ class Agent:
             task_complete = verification.get("task_complete", False)
             screen_changed = verification.get("screen_changed", True)
 
-            # Update memory
+            # Update memory (no screenshot stored — it was never read back and
+            # accumulated ~500 KB per action in RAM for a 50-action task)
             memory.add_action(
                 action,
                 result=explanation or result,
-                screenshot_b64=new_screen.screenshot_base64,
                 success=success,
             )
 
@@ -311,20 +331,13 @@ class Agent:
                 break
 
             if success:
-                memory.reset_retries()
                 console.print(f"  [green]OK:[/green] {explanation}")
             else:
-                memory.retry_count += 1
                 console.print(f"  [yellow]Issue:[/yellow] {explanation}")
                 if not screen_changed:
                     console.print(
                         "  [dim]Screen unchanged — action may not have had effect.[/dim]"
                     )
-                if memory.retry_count >= memory.max_retries:
-                    console.print(
-                        "[yellow]Max retries for this step. Re-planning...[/yellow]"
-                    )
-                    memory.retry_count = 0
 
             console.print()
             screen = new_screen
