@@ -41,6 +41,7 @@ class Executor:
             "file_select": lambda: self._file_select(params),
             "window_switch": lambda: self._window_switch(params),
             "navigate": lambda: self._navigate(params),
+            "compose_email": lambda: self._compose_email(params),
             "form_fill": lambda: self._form_fill(params, screen_width, screen_height),
             "wait": lambda: self._wait(params),
             "done": lambda: "task_complete",
@@ -364,17 +365,20 @@ class Executor:
 
     # ── Browser navigation ──────────────────────────────────────────────
 
+    # URL schemes that should be passed directly to `open` without modification.
+    # Anything not in this list is treated as a bare search term and wrapped
+    # in a Google search URL.
+    _KNOWN_SCHEMES = ("http://", "https://", "file://", "mailto:")
+
     def _navigate(self, params: dict) -> str:
-        """Open a URL or search term in the default browser.
+        """Open a URL, mailto link, or search term via the macOS `open` command.
 
-        Uses the macOS `open` command rather than Cmd+L so that navigation
-        works regardless of which app currently has focus.  Cmd+L only works
-        when a browser is already the active window; if VS Code, Terminal, or
-        any other app is focused, Cmd+L fires there instead and the URL ends
-        up in the wrong place.
+        Works regardless of which app currently has focus — no Cmd+L required.
+        `open` hands the target off to the OS; the appropriate app (browser or
+        mail client) brings itself to front and handles the request.
 
-        `open` hands the URL off to the OS and returns immediately; the
-        browser brings itself to front and starts loading.
+        Recognized schemes: http, https, file, mailto.
+        Anything else is treated as a search term and opened via Google.
         """
         import urllib.parse
 
@@ -382,19 +386,61 @@ class Executor:
         if not url:
             return "navigate: no url specified"
 
-        # If it looks like a search term rather than a URL, build a search URL
-        # so `open` has a valid target.
-        if not any(url.startswith(p) for p in ("http://", "https://", "file://")):
+        # Bare search terms get wrapped in a Google search URL so `open` has
+        # a valid target.  Recognized URL schemes pass through unchanged.
+        if not any(url.startswith(p) for p in self._KNOWN_SCHEMES):
             url = "https://www.google.com/search?q=" + urllib.parse.quote_plus(url)
 
         try:
             subprocess.run(["open", url], timeout=10, check=True)
-            time.sleep(0.5)  # give the browser time to come to front
+            # Longer delay so the browser has time to activate and render
+            # before the next perception call; insufficient delay causes the
+            # planner to see VS Code still and re-issue navigate.
+            time.sleep(1.5)
             return f"navigate: {url}"
         except subprocess.TimeoutExpired:
             return "navigate: open command timed out"
         except Exception as e:
             return f"navigate error: {e}"
+
+    def _compose_email(self, params: dict) -> str:
+        """Open Gmail's compose window with pre-filled To, Subject, and Body.
+
+        Uses Gmail's compose URL (?view=cm&to=...&su=...&body=...) which opens
+        the compose dialog with all fields pre-filled via a single `open` call.
+        This completely avoids the need to click the Compose button, click each
+        field, and type — all of which require correct coordinate guessing.
+
+        The user still needs to click Send (or the agent can do so with a click
+        on the Send button once the compose window is verified open).
+        """
+        import urllib.parse
+
+        to = params.get("to", "")
+        if not to:
+            return "compose_email: no recipient (to) specified"
+
+        subject = params.get("subject", "")
+        body = params.get("body", "")
+
+        args: dict[str, str] = {"view": "cm"}
+        if to:
+            args["to"] = to
+        if subject:
+            args["su"] = subject
+        if body:
+            args["body"] = body
+
+        compose_url = "https://mail.google.com/mail/?" + urllib.parse.urlencode(args)
+
+        try:
+            subprocess.run(["open", compose_url], timeout=10, check=True)
+            time.sleep(2.0)  # Gmail compose takes a moment to render
+            return f"compose_email: to={to} subject={subject!r}"
+        except subprocess.TimeoutExpired:
+            return "compose_email: open command timed out"
+        except Exception as e:
+            return f"compose_email error: {e}"
 
     # ── Form fill ───────────────────────────────────────────────────────
 

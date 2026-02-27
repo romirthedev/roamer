@@ -126,16 +126,30 @@ def quick_verify(
         # Small or no change — let LLM decide (could be a miss-click)
         return None
 
-    # navigate: the `open` subprocess either raises (caught by executor) or
-    # succeeds synchronously.  If we reach verification the command ran OK;
-    # the page may still be loading but that is handled by the loading loop.
-    if action_type == "navigate":
+    # navigate / compose_email: the `open` subprocess is synchronous — if it
+    # raises the executor surfaces an error string.  But the browser activating
+    # is async: if the screen didn't change at all, the browser didn't come to
+    # front yet (or another app stayed on top).  Treat that as a failure so
+    # consecutive_failures accumulates and the planner tries a different approach
+    # instead of issuing another navigate to the same URL.
+    if action_type in ("navigate", "compose_email"):
+        if screen_changed:
+            return {
+                "success": True,
+                "explanation": "Browser activated and screen updated after navigation.",
+                "task_complete": False,
+                "confidence": "high",
+                "screen_changed": True,
+            }
         return {
-            "success": True,
-            "explanation": "navigate executed; browser is loading the URL.",
+            "success": False,
+            "explanation": (
+                "navigate executed but screen did not change — "
+                "browser may not have come to front yet. Try a wait action."
+            ),
             "task_complete": False,
-            "confidence": "high",
-            "screen_changed": screen_changed,
+            "confidence": "medium",
+            "screen_changed": False,
         }
 
     # select_all, form_fill, file_select, window_switch, drag: let LLM verify
