@@ -404,15 +404,11 @@ class Executor:
             return f"navigate error: {e}"
 
     def _compose_email(self, params: dict) -> str:
-        """Open Gmail's compose window with pre-filled To, Subject, and Body.
+        """Open a new email compose window via a mailto: URI.
 
-        Uses Gmail's compose URL (?view=cm&to=...&su=...&body=...) which opens
-        the compose dialog with all fields pre-filled via a single `open` call.
-        This completely avoids the need to click the Compose button, click each
-        field, and type — all of which require correct coordinate guessing.
-
-        The user still needs to click Send (or the agent can do so with a click
-        on the Send button once the compose window is verified open).
+        Uses the macOS `open` command to hand the mailto: link to the system's
+        default mail client — works with Apple Mail, Outlook, Spark, or any
+        other configured client without hardcoding app-specific behaviour.
         """
         import urllib.parse
 
@@ -423,19 +419,19 @@ class Executor:
         subject = params.get("subject", "")
         body = params.get("body", "")
 
-        args: dict[str, str] = {"view": "cm"}
-        if to:
-            args["to"] = to
+        query_parts: list[str] = []
         if subject:
-            args["su"] = subject
+            query_parts.append("subject=" + urllib.parse.quote(subject))
         if body:
-            args["body"] = body
+            query_parts.append("body=" + urllib.parse.quote(body))
 
-        compose_url = "https://mail.google.com/mail/?" + urllib.parse.urlencode(args)
+        mailto_url = "mailto:" + urllib.parse.quote(to, safe="@,")
+        if query_parts:
+            mailto_url += "?" + "&".join(query_parts)
 
         try:
-            subprocess.run(["open", compose_url], timeout=10, check=True)
-            time.sleep(2.0)  # Gmail compose takes a moment to render
+            subprocess.run(["open", mailto_url], timeout=10, check=True)
+            time.sleep(1.5)
             return f"compose_email: to={to} subject={subject!r}"
         except subprocess.TimeoutExpired:
             return "compose_email: open command timed out"

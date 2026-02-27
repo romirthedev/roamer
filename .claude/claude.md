@@ -111,6 +111,12 @@
 
 ## Core Principles
 
+### No Hardcoded Task Instructions in Prompts
+- **Never put task-specific instructions in `prompts.py`** (e.g., "always use X to send email", "to open a URL do Y")
+- The planner prompt must describe the available *primitives* (actions, params, mechanics) and let the model reason from the current screen state
+- Task-specific recipes encoded in the prompt are brittle, app-specific, and prevent the agent from generalising
+- If a new action is needed, add it to `executor.py` and document its params in the action list — not as a hardcoded "how to do task X" recipe
+
 ### Simplicity First
 - **Make every change as simple as possible**
 - **Impact minimal code**
