@@ -22,6 +22,7 @@ class ScreenState:
     elements: list[dict] = field(default_factory=list)
     errors: str = ""
     active_app: str = ""
+    loading: bool = False
     screen_width: int = 0
     screen_height: int = 0
     # Original (pre-scale) dimensions for coordinate mapping
@@ -57,6 +58,7 @@ class Perception:
             elements=analysis.get("elements", []),
             errors=analysis.get("errors", ""),
             active_app=analysis.get("active_app", ""),
+            loading=analysis.get("loading", False),
             screen_width=scaled_w,
             screen_height=scaled_h,
             original_width=original_w,
@@ -64,8 +66,7 @@ class Perception:
         )
 
     def _take_screenshot(self) -> Image.Image:
-        screenshot = pyautogui.screenshot()
-        return screenshot
+        return pyautogui.screenshot()
 
     def _scale_image(self, image: Image.Image) -> Image.Image:
         scale = self.config.screenshot_scale
@@ -125,4 +126,5 @@ class Perception:
                 "elements": [],
                 "errors": str(e),
                 "active_app": "",
+                "loading": False,
             }

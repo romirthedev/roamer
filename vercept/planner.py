@@ -5,7 +5,12 @@ from openai import OpenAI
 from config import VerceptConfig
 from vercept.memory import TaskMemory
 from vercept.perception import ScreenState
-from vercept.prompts import PLAN_PROMPT, VERIFY_PROMPT
+from vercept.prompts import (
+    PLAN_PROMPT,
+    PLAN_PROMPT_FAILURE_CONTEXT,
+    VERIFY_PROMPT,
+    SUMMARIZE_PROMPT,
+)
 
 
 class Planner:
@@ -22,6 +27,15 @@ class Planner:
             json.dumps(history, indent=2) if history else "No actions taken yet."
         )
 
+        # Build failure context block if we've been failing
+        failure_context = ""
+        if memory.consecutive_failures >= 2:
+            failed = memory.get_failure_context()
+            failure_context = PLAN_PROMPT_FAILURE_CONTEXT.format(
+                failure_count=memory.consecutive_failures,
+                failed_actions=json.dumps(failed, indent=2),
+            )
+
         prompt = PLAN_PROMPT.format(
             instruction=instruction,
             screen_description=screen.description,
@@ -31,6 +45,7 @@ class Planner:
             ocr_text=screen.ocr_text[:2000] if screen.ocr_text else "(none)",
             width=screen.screen_width,
             height=screen.screen_height,
+            failure_context=failure_context,
         )
 
         try:
@@ -55,11 +70,7 @@ class Planner:
                 temperature=0,
             )
             raw = response.choices[0].message.content.strip()
-            if raw.startswith("```"):
-                raw = raw.split("\n", 1)[1] if "\n" in raw else raw[3:]
-                if raw.endswith("```"):
-                    raw = raw[:-3]
-                raw = raw.strip()
+            raw = self._strip_fences(raw)
             return json.loads(raw)
         except (json.JSONDecodeError, Exception) as e:
             return {
@@ -67,6 +78,8 @@ class Planner:
                 "params": {"seconds": 1.0},
                 "reasoning": f"Planning failed ({e}), waiting to retry.",
                 "is_final": False,
+                "confidence": "low",
+                "fallback_action": None,
             }
 
     def verify_success(
@@ -115,15 +128,46 @@ class Planner:
                 temperature=0,
             )
             raw = response.choices[0].message.content.strip()
-            if raw.startswith("```"):
-                raw = raw.split("\n", 1)[1] if "\n" in raw else raw[3:]
-                if raw.endswith("```"):
-                    raw = raw[:-3]
-                raw = raw.strip()
+            raw = self._strip_fences(raw)
             return json.loads(raw)
         except (json.JSONDecodeError, Exception):
             return {
                 "success": True,
                 "explanation": "Verification unavailable, assuming success.",
                 "task_complete": False,
+                "confidence": "low",
+                "screen_changed": True,
             }
+
+    def summarize_actions(self, actions: list[dict]) -> str:
+        """Use the LLM to produce a short summary of completed actions."""
+        if not actions:
+            return "No actions taken."
+
+        actions_text = "\n".join(
+            f"{i+1}. {a.get('action_type','')}: {a.get('reasoning','')[:80]}"
+            for i, a in enumerate(actions)
+        )
+        prompt = SUMMARIZE_PROMPT.format(
+            count=len(actions), actions_text=actions_text
+        )
+
+        try:
+            response = self.client.chat.completions.create(
+                model=self.config.model,
+                messages=[{"role": "user", "content": prompt}],
+                max_tokens=150,
+                temperature=0,
+            )
+            return response.choices[0].message.content.strip()
+        except Exception:
+            return f"Completed {len(actions)} action(s)."
+
+    @staticmethod
+    def _strip_fences(raw: str) -> str:
+        """Strip markdown code fences from LLM JSON output."""
+        if raw.startswith("```"):
+            raw = raw.split("\n", 1)[1] if "\n" in raw else raw[3:]
+            if raw.endswith("```"):
+                raw = raw[:-3]
+        return raw.strip()
