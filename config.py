@@ -19,6 +19,8 @@ class VerceptConfig:
     # Timeouts
     max_task_duration: int = 1800  # 30 minutes per task
     action_timeout: int = 30  # seconds per action
+    # How long to wait for a "loading" screen to clear before aborting
+    loading_wait_timeout: int = 60
 
     # Safety: app restrictions (macOS)
     app_blacklist: list[str] = field(default_factory=lambda: [

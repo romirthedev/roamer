@@ -116,6 +116,10 @@ class Agent:
     # ── Core loop ────────────────────────────────────────────────────────
 
     def _run_loop(self, instruction: str, screen, memory: TaskMemory) -> None:
+        # Track how long we've been stuck on a loading screen so we don't
+        # loop forever if the VLM persistently misidentifies the state.
+        loading_wait_start: float | None = None
+
         while True:
             # Safety: action count limit
             if not self.safety.action_count_ok(memory.action_count):
@@ -129,12 +133,38 @@ class Agent:
                 )
                 break
 
-            # If screen is loading, wait and re-capture
+            # Safety: re-check the active app on every iteration so that
+            # mid-task app switches (via window_switch or link clicks) are
+            # caught, not just the initial check.
+            if screen.active_app and not self.safety.check_app_allowed(
+                screen.active_app
+            ):
+                console.print(
+                    f"[red]Active app changed to restricted app "
+                    f"'{screen.active_app}'. Stopping.[/red]"
+                )
+                break
+
+            # If screen is loading, wait and re-capture — but enforce a timeout
+            # so a persistently misidentified loading state doesn't spin forever.
             if screen.loading:
+                if loading_wait_start is None:
+                    loading_wait_start = time.time()
+                elif (
+                    time.time() - loading_wait_start
+                    > self.config.loading_wait_timeout
+                ):
+                    console.print(
+                        f"[red]Loading timeout "
+                        f"({self.config.loading_wait_timeout}s). Stopping.[/red]"
+                    )
+                    break
                 console.print("[dim]Screen is loading — waiting...[/dim]")
                 time.sleep(2.0)
                 screen = self.perception.capture()
                 continue
+            else:
+                loading_wait_start = None  # reset once loading clears
 
             # Abort if too many consecutive failures
             if memory.consecutive_failures >= ABORT_THRESHOLD:
@@ -153,18 +183,28 @@ class Agent:
             console.print("[dim]Planning...[/dim]")
             action = self.planner.next_action(instruction, screen, memory)
 
-            # If we've been failing and a fallback was provided, swap it in
+            # If we've been failing and a fallback was provided, swap it in.
+            # Use a non-destructive merge so the original reasoning is preserved
+            # in the log for traceability.
             if (
                 memory.consecutive_failures >= FALLBACK_THRESHOLD
                 and action.get("fallback_action")
                 and action.get("confidence", "high") in ("low", "medium")
             ):
                 fallback = action["fallback_action"]
+                original_reasoning = action.get("reasoning", "")
                 console.print(
                     f"  [yellow]Using fallback due to "
                     f"{memory.consecutive_failures} failures.[/yellow]"
                 )
-                action.update(fallback)
+                # Build a new dict so the original action is not mutated
+                action = {**action, **fallback}
+                fallback_reasoning = fallback.get("reasoning", "")
+                if fallback_reasoning and fallback_reasoning != original_reasoning:
+                    action["reasoning"] = (
+                        f"[Fallback] {fallback_reasoning}"
+                        + (f" (was: {original_reasoning})" if original_reasoning else "")
+                    )
 
             action_type = action.get("action_type", "unknown")
             reasoning = action.get("reasoning", "")
@@ -198,15 +238,23 @@ class Agent:
             if params:
                 console.print(f"  [dim]Params: {params}[/dim]")
 
-            # Safety: block sudo entirely (no user override)
+            # Safety: block sudo entirely (no user override).
+            # Mark as neutral so a blocked sudo doesn't count toward the
+            # consecutive-failure abort counter.
             if self.safety.block_sudo(action):
-                memory.add_action(action, result="blocked_sudo", success=False)
+                memory.add_action(
+                    action, result="blocked_sudo", success=False, neutral=True
+                )
                 continue
 
-            # Safety: check risky actions (user confirmation prompt)
+            # Safety: check risky actions (user confirmation prompt).
+            # A user choosing to skip an action is not a task failure — mark
+            # neutral so skips don't accumulate toward the abort threshold.
             if not self.safety.check(action):
                 console.print("  [yellow]Skipped by user.[/yellow]")
-                memory.add_action(action, result="skipped_by_user", success=False)
+                memory.add_action(
+                    action, result="skipped_by_user", success=False, neutral=True
+                )
                 continue
 
             # Execute

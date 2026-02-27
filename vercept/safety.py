@@ -179,11 +179,24 @@ class SafetyGuard:
         if not self.config.enable_audit_logging:
             return
         try:
+            action_type = action.get("action_type", "")
+            params = action.get("params", {})
+
+            # Redact text content so typed passwords and other sensitive
+            # strings are not stored in plaintext in the audit log.
+            if action_type == "type":
+                params = {**params, "text": "[REDACTED]"}
+            elif action_type == "form_fill":
+                redacted_fields = [
+                    {**f, "text": "[REDACTED]"} for f in params.get("fields", [])
+                ]
+                params = {**params, "fields": redacted_fields}
+
             entry = {
                 "ts": time.strftime("%Y-%m-%dT%H:%M:%S"),
                 "event": event,
-                "action_type": action.get("action_type", ""),
-                "params": action.get("params", {}),
+                "action_type": action_type,
+                "params": params,
             }
             with open(self._audit_file, "a") as f:
                 f.write(json.dumps(entry) + "\n")

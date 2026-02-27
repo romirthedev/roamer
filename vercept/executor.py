@@ -33,7 +33,8 @@ class Executor:
             "triple_click": lambda: self._triple_click(params, screen_width, screen_height),
             "type": lambda: self._type_text(params),
             "key_press": lambda: self._key_press(params),
-            "scroll": lambda: self._scroll(params),
+            # scroll now receives screen dimensions so it can position the mouse
+            "scroll": lambda: self._scroll(params, screen_width, screen_height),
             "hotkey": lambda: self._hotkey(params),
             "drag": lambda: self._drag(params, screen_width, screen_height),
             "select_all": lambda: self._select_all(params, screen_width, screen_height),
@@ -69,6 +70,29 @@ class Executor:
         real_x = max(0, min(real_x, actual_w - 1))
         real_y = max(0, min(real_y, actual_h - 1))
         return real_x, real_y
+
+    # ── Clipboard helper ────────────────────────────────────────────────
+
+    @staticmethod
+    def _paste_via_clipboard(text: str) -> bool:
+        """Copy text to macOS clipboard and paste with Cmd+V.
+
+        Returns True on success, False if pbcopy is unavailable (non-macOS).
+        Handles all Unicode characters that pyautogui.write() cannot.
+        """
+        try:
+            subprocess.run(
+                ["pbcopy"],
+                input=text.encode("utf-8"),
+                timeout=5,
+                check=True,
+            )
+            time.sleep(0.05)
+            pyautogui.hotkey("command", "v")
+            return True
+        except FileNotFoundError:
+            # pbcopy not present — caller should fall back to pyautogui.write
+            return False
 
     # ── Click actions ───────────────────────────────────────────────────
 
@@ -113,7 +137,20 @@ class Executor:
     # ── Keyboard actions ────────────────────────────────────────────────
 
     def _type_text(self, params: dict) -> str:
+        """Type text using clipboard paste for full Unicode support.
+
+        pyautogui.write() only handles basic ASCII keycodes and breaks for
+        accented characters, emoji, CJK, and many special symbols.  Using
+        pbcopy + Cmd+V bypasses that limitation entirely.
+        """
         text = params.get("text", "")
+        if not text:
+            return "typed: (empty)"
+
+        if self._paste_via_clipboard(text):
+            return f"typed (clipboard): {text[:50]}{'...' if len(text) > 50 else ''}"
+
+        # Fallback: pyautogui.write for environments without pbcopy
         pyautogui.write(text, interval=0.03)
         return f"typed: {text[:50]}{'...' if len(text) > 50 else ''}"
 
@@ -134,6 +171,8 @@ class Executor:
             "down": "down",
             "left": "left",
             "right": "right",
+            # Function keys — explicitly mapped so intent is clear
+            **{f"f{i}": f"f{i}" for i in range(1, 13)},
         }
         mapped = key_map.get(key.lower(), key.lower())
         pyautogui.press(mapped)
@@ -164,16 +203,42 @@ class Executor:
 
     # ── Scroll ──────────────────────────────────────────────────────────
 
-    def _scroll(self, params: dict) -> str:
+    def _scroll(self, params: dict, screen_width: int, screen_height: int) -> str:
+        """Scroll in the given direction.
+
+        Optional params 'x' and 'y' move the mouse to the scroll target first,
+        so the correct scrollable area receives the event (e.g. a sidebar vs
+        the main content pane).
+
+        Horizontal scroll uses pyautogui.hscroll when available, falling back
+        to Shift+vertical-scroll which most macOS apps treat as horizontal.
+        """
         direction = params.get("direction", "down")
         amount = params.get("amount", 3)
+
+        # Position the cursor over the intended scroll target
+        x = params.get("x")
+        y = params.get("y")
+        if x is not None and y is not None:
+            rx, ry = self._scale_coords(int(x), int(y), screen_width, screen_height)
+            pyautogui.moveTo(rx, ry)
+            time.sleep(0.05)
+
         if direction in ("up", "down"):
             scroll_val = amount if direction == "up" else -amount
             pyautogui.scroll(scroll_val)
-        elif direction == "left":
-            pyautogui.hscroll(-amount)
-        elif direction == "right":
-            pyautogui.hscroll(amount)
+        elif direction in ("left", "right"):
+            hscroll_fn = getattr(pyautogui, "hscroll", None)
+            if callable(hscroll_fn):
+                val = -amount if direction == "left" else amount
+                hscroll_fn(val)
+            else:
+                # Shift+scroll is treated as horizontal scroll in most macOS apps
+                pyautogui.keyDown("shift")
+                val = amount if direction == "left" else -amount
+                pyautogui.scroll(val)
+                pyautogui.keyUp("shift")
+
         return f"scrolled {direction} by {amount}"
 
     # ── Drag ────────────────────────────────────────────────────────────
@@ -203,37 +268,69 @@ class Executor:
     def _select_all(
         self, params: dict, screen_width: int, screen_height: int
     ) -> str:
-        x, y = self._scale_coords(
-            params.get("x", 0), params.get("y", 0), screen_width, screen_height
-        )
-        pyautogui.click(x=x, y=y)
-        time.sleep(0.1)
+        """Select all text in a field.
+
+        If explicit x/y coordinates are provided, click the field first.
+        Without coordinates we skip the click to avoid accidentally activating
+        whatever lives at (0, 0) — the macOS Apple menu — and just issue Cmd+A
+        to the currently focused element.
+        """
+        if "x" in params and "y" in params:
+            x, y = self._scale_coords(
+                int(params["x"]), int(params["y"]), screen_width, screen_height
+            )
+            pyautogui.click(x=x, y=y)
+            time.sleep(0.1)
+            loc = f"({x}, {y})"
+        else:
+            loc = "(current focus)"
+
         pyautogui.hotkey("command", "a")
-        return f"select_all at ({x}, {y})"
+        return f"select_all at {loc}"
 
     # ── File select (macOS) ─────────────────────────────────────────────
 
     def _file_select(self, params: dict) -> str:
-        """Navigate a macOS Open/Save file dialog by typing the path directly."""
+        """Navigate a macOS Open/Save file dialog to the given path.
+
+        Uses clipboard paste (pbcopy) instead of pyautogui.write() so paths
+        with spaces, Unicode, or special characters are entered correctly.
+
+        Note: Cmd+Shift+G only works inside native macOS file dialogs and
+        Finder.  Electron or custom file pickers require a different approach.
+        """
         file_path = params.get("file_path", "")
         if not file_path:
             return "file_select: no file_path specified"
 
-        # On macOS, Cmd+Shift+G opens "Go to Folder" in file dialogs
-        pyautogui.hotkey("command", "shift", "g")
-        time.sleep(0.5)
+        # Place the path on the clipboard before opening the dialog
+        try:
+            subprocess.run(
+                ["pbcopy"],
+                input=file_path.encode("utf-8"),
+                timeout=5,
+                check=True,
+            )
+        except FileNotFoundError:
+            return "file_select: pbcopy unavailable — cannot set clipboard path"
+        except Exception as e:
+            return f"file_select: clipboard setup failed: {e}"
 
-        # Clear any existing text and type the path
+        # Open "Go to Folder" sheet inside the file dialog
+        pyautogui.hotkey("command", "shift", "g")
+        time.sleep(max(0.5, self.config.file_dialog_timeout * 0.15))
+
+        # Select any pre-filled text and paste the path
         pyautogui.hotkey("command", "a")
         time.sleep(0.05)
-        pyautogui.write(file_path, interval=0.02)
+        pyautogui.hotkey("command", "v")
         time.sleep(0.3)
 
-        # Press Enter to navigate to the path
+        # Navigate to the directory
         pyautogui.press("return")
         time.sleep(0.5)
 
-        # Press Enter again to select/open the file
+        # Confirm/select the file
         pyautogui.press("return")
         time.sleep(0.3)
 
@@ -242,7 +339,7 @@ class Executor:
     # ── Window switch (macOS) ───────────────────────────────────────────
 
     def _window_switch(self, params: dict) -> str:
-        """Switch to a specific application using AppleScript on macOS."""
+        """Bring a specific application to the front using AppleScript."""
         app_name = params.get("app_name", "")
         if not app_name:
             return "window_switch: no app_name specified"
@@ -269,7 +366,12 @@ class Executor:
     def _form_fill(
         self, params: dict, screen_width: int, screen_height: int
     ) -> str:
-        """Fill multiple form fields in sequence."""
+        """Fill multiple form fields in sequence.
+
+        Uses triple-click to focus each field and select any pre-existing
+        content (more reliable than click + Cmd+A for most input types).
+        Text is entered via clipboard paste for full Unicode support.
+        """
         fields = params.get("fields", [])
         if not fields:
             return "form_fill: no fields specified"
@@ -281,18 +383,14 @@ class Executor:
             )
             text = field.get("text", "")
 
-            # Click field
-            pyautogui.click(x=x, y=y)
-            time.sleep(0.15)
+            # Triple-click focuses the field and selects any existing text
+            pyautogui.click(x=x, y=y, clicks=3)
+            time.sleep(0.2)  # allow focus to settle
 
-            # Clear existing content
-            pyautogui.hotkey("command", "a")
-            time.sleep(0.05)
-            pyautogui.press("delete")
-            time.sleep(0.05)
-
-            # Type new value
-            pyautogui.write(text, interval=0.02)
+            # Type via clipboard so Unicode / special chars work
+            if not self._paste_via_clipboard(text):
+                # pbcopy unavailable — fall back to direct typing
+                pyautogui.write(text, interval=0.02)
             time.sleep(0.1)
 
             # Tab to next field

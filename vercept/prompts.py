@@ -50,7 +50,7 @@ RECENT ACTION HISTORY (last {history_count} actions):
 {action_history}
 
 {failure_context}
-
+{resumed_note}
 OCR TEXT ON SCREEN:
 {ocr_text}
 
@@ -74,12 +74,12 @@ Available actions and their param schemas:
 - triple_click:   {{"x": int, "y": int}}
 - type:           {{"text": "string to type"}}
 - key_press:      {{"key": "enter"|"escape"|"tab"|"delete"|"backspace"|"up"|"down"|"left"|"right"|"space"|"f1"-"f12"}}
-- scroll:         {{"direction": "up"|"down"|"left"|"right", "amount": 3}}
+- scroll:         {{"direction": "up"|"down"|"left"|"right", "amount": 3, "x": int (optional), "y": int (optional)}}
 - hotkey:         {{"keys": ["cmd", "c"]}}
 - drag:           {{"start_x": int, "start_y": int, "end_x": int, "end_y": int}}
-- select_all:     {{"x": int, "y": int}}  (clicks field then Cmd+A)
+- select_all:     {{"x": int, "y": int}}  (clicks field then Cmd+A; omit x/y to apply to current focus)
 - file_select:    {{"file_path": "/path/to/file"}}  (for open/save file dialogs)
-- window_switch:  {{"app_name": "Safari"}}  (switch to app via Cmd+Tab)
+- window_switch:  {{"app_name": "Safari"}}  (bring app to front via AppleScript)
 - form_fill:      {{"fields": [{{"x": int, "y": int, "text": "value"}}, ...]}}
 - wait:           {{"seconds": 1.0}}
 - done:           {{}}  (set is_final: true)
@@ -98,6 +98,8 @@ GUIDELINES:
 - Use file_select when a file dialog (Open/Save) is visible.
 - Use window_switch to bring a different app to front.
 - Use form_fill to fill multiple fields in one action (more efficient for forms).
+- For scroll: supply x/y when you want to scroll a specific region (e.g. a sidebar).
+  Without x/y, scrolls wherever the cursor is currently positioned.
 - If something went wrong in the history, adapt your approach.
 - If the same action has failed multiple times, try a different approach entirely.
 - Set "confidence" to indicate how sure you are this action will succeed.
@@ -116,6 +118,16 @@ Try a DIFFERENT approach. Consider:
 - Waiting for the UI to update
 - Using the fallback_action from previous attempts
 Do NOT repeat the exact same action that already failed."""
+
+PLAN_PROMPT_RESUMED_NOTE = """\
+RESUMED SESSION NOTE:
+This task was interrupted and is now being resumed.  The action history above
+reflects what was done in a PREVIOUS session.  The current screen state may
+differ significantly from where the task left off (e.g. apps may have been
+closed or the computer restarted).  Before continuing, verify that the screen
+state matches your expectations from the history.  If prior steps appear
+already complete on the current screen, skip them and continue from where
+progress stopped."""
 
 VERIFY_PROMPT = """\
 You are verifying whether a computer action succeeded on macOS.

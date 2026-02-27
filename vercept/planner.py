@@ -8,6 +8,7 @@ from vercept.perception import ScreenState
 from vercept.prompts import (
     PLAN_PROMPT,
     PLAN_PROMPT_FAILURE_CONTEXT,
+    PLAN_PROMPT_RESUMED_NOTE,
     VERIFY_PROMPT,
     SUMMARIZE_PROMPT,
 )
@@ -36,6 +37,10 @@ class Planner:
                 failed_actions=json.dumps(failed, indent=2),
             )
 
+        # Warn the model when picking up an interrupted session so it doesn't
+        # blindly re-execute steps that may already be done on the live screen.
+        resumed_note = PLAN_PROMPT_RESUMED_NOTE if memory.resumed else ""
+
         prompt = PLAN_PROMPT.format(
             instruction=instruction,
             screen_description=screen.description,
@@ -46,6 +51,7 @@ class Planner:
             width=screen.screen_width,
             height=screen.screen_height,
             failure_context=failure_context,
+            resumed_note=resumed_note,
         )
 
         try:
