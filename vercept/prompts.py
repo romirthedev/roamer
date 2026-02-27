@@ -79,9 +79,9 @@ Available actions and their param schemas:
 - drag:           {{"start_x": int, "start_y": int, "end_x": int, "end_y": int}}
 - select_all:     {{"x": int, "y": int}}  (clicks field then Cmd+A; omit x/y to apply to current focus)
 - file_select:    {{"file_path": "/path/to/file"}}  (for open/save file dialogs)
-- window_switch:  {{"app_name": "Safari"}}  (bring app to front via AppleScript)
-- navigate:       {{"url": "https://example.com"}}  (opens URL in default browser via macOS open; works from any app. Also accepts bare search terms like "python docs". Handles mailto: links too.)
-- compose_email:  {{"to": "user@example.com", "subject": "Subject line", "body": "Full email body text"}}  (opens a new email compose window in the system default mail client via mailto:; no clicking required)
+- window_switch:  {{"app_name": "Safari"}}  (bring app to front via AppleScript; launches it if not already running)
+- navigate:       {{"url": "https://example.com"}}  (opens URL, domain, or search term via macOS open — works from any app, no window_switch needed first. Accepts: full URLs, bare domains like "docs.python.org", search terms like "python tutorial", mailto: links.)
+- compose_email:  {{"to": "user@example.com", "subject": "Subject line", "body": "Full email body text"}}  (opens a new compose window in the system default mail client via mailto:; subject and body are optional)
 - form_fill:      {{"fields": [{{"x": int, "y": int, "text": "value"}}, ...]}}
 - wait:           {{"seconds": 1.0}}
 - done:           {{}}  (set is_final: true)
@@ -90,7 +90,12 @@ GUIDELINES:
 - Coordinates are relative to the screenshot ({width}x{height} pixels).
 - Issue exactly ONE action. Do not plan multiple steps.
 - If the task appears complete, use action_type "done" with is_final: true.
-- Prefer clicking identified elements over guessing coordinates.
+- COORDINATE ACCURACY: The IDENTIFIED UI ELEMENTS list above already contains
+  exact x/y positions for every detected button, link, and field. Always copy
+  those coordinates directly — do NOT visually estimate from the screenshot
+  image. Only estimate coordinates for content not in the elements list (e.g.
+  items inside a scrolled list, inline text in a document).
+- click/double_click/right_click/triple_click REQUIRE x and y — never omit them.
 - Use double_click for opening files/folders, selecting words.
 - Use right_click for context menus.
 - Use triple_click to select an entire line of text.
@@ -98,7 +103,7 @@ GUIDELINES:
 - Use key_press for single key presses (Enter to confirm, Escape to cancel, Tab to move).
 - Use hotkey for multi-key combos (Cmd+C, Cmd+V, Cmd+S, etc.).
 - Use file_select when a file dialog (Open/Save) is visible.
-- Use window_switch to bring a different app to front.
+- Use window_switch to bring a different app to front (also launches it if not running).
 - BROWSER NAVIGATION: To open any URL or search term, use the navigate action
   directly — you do NOT need to call window_switch first. navigate uses the macOS
   `open` command which works from any app state and opens in the default browser.

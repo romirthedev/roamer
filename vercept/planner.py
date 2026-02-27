@@ -86,11 +86,14 @@ class Planner:
         except (json.JSONDecodeError, Exception) as e:
             return {
                 "action_type": "wait",
-                "params": {"seconds": 1.0},
+                "params": {"seconds": 2.0},
                 "reasoning": f"Planning failed ({e}), waiting to retry.",
                 "is_final": False,
                 "confidence": "low",
                 "fallback_action": None,
+                # Sentinel checked by agent.py so this counts as a real failure
+                # rather than a successful wait, preventing infinite retry loops.
+                "planning_failed": True,
             }
 
     def verify_success(
