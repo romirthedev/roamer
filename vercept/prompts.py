@@ -80,7 +80,8 @@ Available actions and their param schemas:
 - select_all:     {{"x": int, "y": int}}  (clicks field then Cmd+A; omit x/y to apply to current focus)
 - file_select:    {{"file_path": "/path/to/file"}}  (for open/save file dialogs)
 - window_switch:  {{"app_name": "Safari"}}  (bring app to front via AppleScript)
-- navigate:       {{"url": "https://example.com"}}  (opens URL in default browser via macOS open; works from any app. Also accepts bare search terms like "python docs")
+- navigate:       {{"url": "https://example.com"}}  (opens URL in default browser via macOS open; works from any app. Also accepts bare search terms like "python docs". Handles mailto: links too.)
+- compose_email:  {{"to": "user@example.com", "subject": "Subject line", "body": "Full email body text"}}  (opens a new email compose window in the system default mail client via mailto:; no clicking required)
 - form_fill:      {{"fields": [{{"x": int, "y": int, "text": "value"}}, ...]}}
 - wait:           {{"seconds": 1.0}}
 - done:           {{}}  (set is_final: true)
