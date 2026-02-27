@@ -365,33 +365,36 @@ class Executor:
     # ── Browser navigation ──────────────────────────────────────────────
 
     def _navigate(self, params: dict) -> str:
-        """Navigate the active browser to a URL or perform a search.
+        """Open a URL or search term in the default browser.
 
-        Uses Cmd+L to focus the address bar, which works in Safari, Chrome,
-        and Firefox regardless of what is currently focused on the page.
-        This is the only reliable way to enter a URL after window_switch:
-        clicking the address bar by coordinate is fragile because the bar's
-        exact position varies with window size and display resolution.
+        Uses the macOS `open` command rather than Cmd+L so that navigation
+        works regardless of which app currently has focus.  Cmd+L only works
+        when a browser is already the active window; if VS Code, Terminal, or
+        any other app is focused, Cmd+L fires there instead and the URL ends
+        up in the wrong place.
+
+        `open` hands the URL off to the OS and returns immediately; the
+        browser brings itself to front and starts loading.
         """
+        import urllib.parse
+
         url = params.get("url", "")
         if not url:
             return "navigate: no url specified"
 
-        # Cmd+L focuses the browser address bar in all major macOS browsers
-        pyautogui.hotkey("command", "l")
-        time.sleep(0.4)  # wait for the bar to receive focus
+        # If it looks like a search term rather than a URL, build a search URL
+        # so `open` has a valid target.
+        if not any(url.startswith(p) for p in ("http://", "https://", "file://")):
+            url = "https://www.google.com/search?q=" + urllib.parse.quote_plus(url)
 
-        # Select any existing URL so the paste replaces it cleanly
-        pyautogui.hotkey("command", "a")
-        time.sleep(0.05)
-
-        # Paste destination via clipboard for full Unicode support
-        if not self._paste_via_clipboard(url):
-            pyautogui.write(url, interval=0.03)
-        time.sleep(0.2)
-
-        pyautogui.press("return")
-        return f"navigate: {url}"
+        try:
+            subprocess.run(["open", url], timeout=10, check=True)
+            time.sleep(0.5)  # give the browser time to come to front
+            return f"navigate: {url}"
+        except subprocess.TimeoutExpired:
+            return "navigate: open command timed out"
+        except Exception as e:
+            return f"navigate error: {e}"
 
     # ── Form fill ───────────────────────────────────────────────────────
 
