@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import os
 
 from dotenv import load_dotenv
@@ -15,6 +15,39 @@ class VerceptConfig:
     confirmation_required: bool = True
     ocr_enabled: bool = True
     dry_run: bool = False
+
+    # Timeouts
+    max_task_duration: int = 1800  # 30 minutes per task
+    action_timeout: int = 30  # seconds per action
+    # How long to wait for a "loading" screen to clear before aborting
+    loading_wait_timeout: int = 60
+
+    # Safety: app restrictions (macOS)
+    app_blacklist: list[str] = field(default_factory=lambda: [
+        "System Preferences",
+        "System Settings",
+        "Keychain Access",
+        "Passwords",
+    ])
+    app_whitelist: list[str] | None = None  # If set, ONLY these apps are allowed
+
+    # Safety: file operations
+    confirm_file_operations: bool = True
+
+    # Audit logging
+    enable_audit_logging: bool = True
+    audit_log_path: str = "~/.vercept/audit.log"
+
+    # Session persistence
+    session_storage_enabled: bool = True
+    session_dir: str = "~/.vercept/sessions"
+
+    # Perception tuning
+    change_detection_threshold: float = 0.02  # 2% pixel diff = "significant"
+
+    # Execution tuning
+    key_press_delay: float = 0.05  # delay between key presses
+    file_dialog_timeout: float = 5.0  # seconds to wait for file dialog
 
 
 def load_config() -> VerceptConfig:
