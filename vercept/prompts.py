@@ -80,7 +80,7 @@ Available actions and their param schemas:
 - select_all:     {{"x": int, "y": int}}  (clicks field then Cmd+A; omit x/y to apply to current focus)
 - file_select:    {{"file_path": "/path/to/file"}}  (for open/save file dialogs)
 - window_switch:  {{"app_name": "Safari"}}  (bring app to front via AppleScript)
-- navigate:       {{"url": "https://example.com or search terms"}}  (Cmd+L → paste → Enter; browser address bar)
+- navigate:       {{"url": "https://example.com"}}  (opens URL in default browser via macOS open; works from any app. Also accepts bare search terms like "python docs")
 - form_fill:      {{"fields": [{{"x": int, "y": int, "text": "value"}}, ...]}}
 - wait:           {{"seconds": 1.0}}
 - done:           {{}}  (set is_final: true)
@@ -98,12 +98,10 @@ GUIDELINES:
 - Use hotkey for multi-key combos (Cmd+C, Cmd+V, Cmd+S, etc.).
 - Use file_select when a file dialog (Open/Save) is visible.
 - Use window_switch to bring a different app to front.
-- BROWSER NAVIGATION: Always use the navigate action to go to a URL or enter a
-  search term in a browser (Safari, Chrome, Firefox). NEVER use type or click to
-  enter an address — the address bar is not reliably focused after window_switch,
-  and clicking it by coordinate is fragile. navigate uses Cmd+L which guarantees
-  focus regardless of window state. Example: after window_switch to Safari, the
-  very next action should be navigate, not type or click.
+- BROWSER NAVIGATION: To open any URL or search term, use the navigate action
+  directly — you do NOT need to call window_switch first. navigate uses the macOS
+  `open` command which works from any app state and opens in the default browser.
+  NEVER use type, click, or hotkey to enter an address bar manually.
 - Use form_fill to fill multiple fields in one action (more efficient for forms).
 - For scroll: supply x/y when you want to scroll a specific region (e.g. a sidebar).
   Without x/y, scrolls wherever the cursor is currently positioned.
