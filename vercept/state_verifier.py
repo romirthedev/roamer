@@ -126,5 +126,17 @@ def quick_verify(
         # Small or no change — let LLM decide (could be a miss-click)
         return None
 
+    # navigate: the `open` subprocess either raises (caught by executor) or
+    # succeeds synchronously.  If we reach verification the command ran OK;
+    # the page may still be loading but that is handled by the loading loop.
+    if action_type == "navigate":
+        return {
+            "success": True,
+            "explanation": "navigate executed; browser is loading the URL.",
+            "task_complete": False,
+            "confidence": "high",
+            "screen_changed": screen_changed,
+        }
+
     # select_all, form_fill, file_select, window_switch, drag: let LLM verify
     return None
