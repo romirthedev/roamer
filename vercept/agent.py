@@ -1,4 +1,5 @@
 import time
+from collections.abc import Callable
 
 from rich.console import Console
 from rich.panel import Panel
@@ -22,7 +23,11 @@ ABORT_THRESHOLD = 5
 
 
 class Agent:
-    def __init__(self, config: VerceptConfig):
+    def __init__(
+        self,
+        config: VerceptConfig,
+        on_event: Callable[[dict], None] | None = None,
+    ):
         self.config = config
         self.perception = Perception(config)
         self.planner = Planner(config)
@@ -33,12 +38,31 @@ class Agent:
             if config.session_storage_enabled
             else None
         )
+        # GUI event callback — called with a structured dict at each agent
+        # milestone so the desktop app can update its UI without parsing
+        # console output.  Defaults to a no-op so CLI mode is unchanged.
+        self._on_event: Callable[[dict], None] = on_event or (lambda _: None)
+        self._stop_requested = False
+
+    def request_stop(self) -> None:
+        """Ask the agent to stop at the next safe checkpoint."""
+        self._stop_requested = True
+
+    def _emit(self, event: dict) -> None:
+        """Forward a structured event to the registered GUI callback."""
+        try:
+            self._on_event(event)
+        except Exception:
+            pass  # Never let a GUI callback crash the agent
 
     # ── Public API ──────────────────────────────────────────────────────
 
     def run(self, instruction: str, resume_task_id: str | None = None) -> None:
         """Run a task from start (or resume a previous session)."""
+        self._stop_requested = False
         memory = self._init_memory(instruction, resume_task_id)
+
+        self._emit({"type": "started", "instruction": instruction, "task_id": memory.task_id})
 
         console.print(
             Panel(
@@ -63,8 +87,15 @@ class Agent:
             console.print(
                 "[red]Initial screen analysis failed. Cannot start task.[/red]"
             )
+            self._emit({"type": "task_aborted", "reason": "Initial screen analysis failed."})
             return
 
+        self._emit({
+            "type": "screen",
+            "screenshot_b64": screen.screenshot_base64,
+            "app": screen.active_app or "",
+            "description": screen.description,
+        })
         self._log_screen(screen)
 
         # Safety: check the currently active app
@@ -73,6 +104,7 @@ class Agent:
                 f"[red]Active app '{screen.active_app}' is restricted. "
                 "Please switch to an allowed app.[/red]"
             )
+            self._emit({"type": "task_aborted", "reason": f"Active app '{screen.active_app}' is restricted."})
             return
 
         try:
@@ -128,8 +160,15 @@ class Agent:
         loading_wait_start: float | None = None
 
         while True:
+            # Graceful stop requested by user (e.g. via GUI Stop button)
+            if self._stop_requested:
+                console.print("[yellow]Task stopped by user.[/yellow]")
+                self._emit({"type": "stopped"})
+                break
+
             # Safety: action count limit
             if not self.safety.action_count_ok(memory.action_count):
+                self._emit({"type": "task_aborted", "reason": "Action limit reached."})
                 break
 
             # Safety: task duration limit
@@ -138,6 +177,7 @@ class Agent:
                     f"[red]Task duration limit reached "
                     f"({self.config.max_task_duration}s). Stopping.[/red]"
                 )
+                self._emit({"type": "task_aborted", "reason": "Task duration limit reached."})
                 break
 
             # Safety: re-check the active app on every iteration so that
@@ -150,6 +190,7 @@ class Agent:
                     f"[red]Active app changed to restricted app "
                     f"'{screen.active_app}'. Stopping.[/red]"
                 )
+                self._emit({"type": "task_aborted", "reason": f"Restricted app: {screen.active_app}"})
                 break
 
             # If screen is loading, wait and re-capture — but enforce a timeout
@@ -165,29 +206,43 @@ class Agent:
                         f"[red]Loading timeout "
                         f"({self.config.loading_wait_timeout}s). Stopping.[/red]"
                     )
+                    self._emit({"type": "task_aborted", "reason": "Loading timeout."})
                     break
                 console.print("[dim]Screen is loading — waiting...[/dim]")
+                self._emit({"type": "loading"})
                 time.sleep(2.0)
                 screen = self.perception.capture()
+                if not screen.perception_failed:
+                    self._emit({
+                        "type": "screen",
+                        "screenshot_b64": screen.screenshot_base64,
+                        "app": screen.active_app or "",
+                        "description": screen.description,
+                    })
                 continue
             else:
                 loading_wait_start = None  # reset once loading clears
 
             # Abort if too many consecutive failures
             if memory.consecutive_failures >= ABORT_THRESHOLD:
+                last = memory.actions_taken[-1].get("result", "") if memory.actions_taken else ""
                 console.print(
                     Panel(
                         f"[red]Aborting: {memory.consecutive_failures} consecutive "
-                        f"failures. Last: "
-                        f"{memory.actions_taken[-1].get('result', '') if memory.actions_taken else ''}[/red]",
+                        f"failures. Last: {last}[/red]",
                         title="Task Aborted",
                         border_style="red",
                     )
                 )
+                self._emit({
+                    "type": "task_aborted",
+                    "reason": f"{memory.consecutive_failures} consecutive failures. Last: {last}",
+                })
                 break
 
             # Plan next action
             console.print("[dim]Planning...[/dim]")
+            self._emit({"type": "planning"})
             action = self.planner.next_action(instruction, screen, memory)
 
             # If we've been failing and a fallback was provided, swap it in.
@@ -220,6 +275,7 @@ class Agent:
             # succeeds, keeping consecutive_failures at 0 forever.
             if action.get("planning_failed"):
                 console.print("  [yellow]Planning error — will retry.[/yellow]")
+                self._emit({"type": "log", "level": "warning", "message": "Planning error — will retry."})
                 time.sleep(2.0)
                 memory.add_action(action, result="planning_failed", success=False)
                 console.print()
@@ -229,6 +285,16 @@ class Agent:
             reasoning = action.get("reasoning", "")
             is_final = action.get("is_final", False)
             confidence = action.get("confidence", "high")
+            params = action.get("params", {})
+
+            self._emit({
+                "type": "action_planned",
+                "action_type": action_type,
+                "reasoning": reasoning,
+                "params": params,
+                "confidence": confidence,
+                "action_number": memory.action_count + 1,
+            })
 
             # Check if task is complete
             if is_final or action_type == "done":
@@ -242,6 +308,7 @@ class Agent:
                         border_style="green",
                     )
                 )
+                self._emit({"type": "task_complete", "summary": summary or reasoning})
                 break
 
             # Display planned action
@@ -253,7 +320,6 @@ class Agent:
                 f"[bold]{action_type}[/bold] — {reasoning} "
                 f"[{conf_color}]({confidence})[/{conf_color}]"
             )
-            params = action.get("params", {})
             if params:
                 console.print(f"  [dim]Params: {params}[/dim]")
 
@@ -281,6 +347,7 @@ class Agent:
                 action, screen.screen_width, screen.screen_height
             )
             console.print(f"  [dim]Result: {result}[/dim]")
+            self._emit({"type": "action_executed", "result": result, "action_type": action_type})
 
             # Wait for UI to settle
             time.sleep(self.config.action_delay)
@@ -302,6 +369,13 @@ class Agent:
                 console.print()
                 continue
 
+            self._emit({
+                "type": "screen",
+                "screenshot_b64": new_screen.screenshot_base64,
+                "app": new_screen.active_app or "",
+                "description": new_screen.description,
+            })
+
             # Try fast-path heuristic verification first
             verification = quick_verify(
                 screen,
@@ -320,6 +394,14 @@ class Agent:
             explanation = verification.get("explanation", "")
             task_complete = verification.get("task_complete", False)
             screen_changed = verification.get("screen_changed", True)
+
+            self._emit({
+                "type": "verified",
+                "success": success,
+                "explanation": explanation,
+                "action_type": action_type,
+                "task_complete": task_complete,
+            })
 
             # Update memory (no screenshot stored — it was never read back and
             # accumulated ~500 KB per action in RAM for a 50-action task)
@@ -340,6 +422,7 @@ class Agent:
                         border_style="green",
                     )
                 )
+                self._emit({"type": "task_complete", "summary": summary or explanation})
                 break
 
             if success:

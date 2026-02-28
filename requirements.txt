@@ -4,3 +4,6 @@ Pillow>=10.0.0
 pytesseract>=0.3.10
 rich>=13.0.0
 python-dotenv>=1.0.0
+
+# Desktop GUI (optional — only needed for python main_gui.py)
+PyQt6>=6.4.0

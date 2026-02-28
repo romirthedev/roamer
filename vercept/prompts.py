@@ -32,6 +32,8 @@ IMPORTANT:
 - For buttons: note if they appear disabled (greyed out).
 - For dropdowns/menus: note the currently selected value if visible.
 - Identify file browser elements if visible (file list, path bar, sidebar).
+- If a window labeled "Vercept" is visible, it is the automation tool running \
+  this task — do NOT include it as a target element; ignore it entirely.
 
 Respond with ONLY valid JSON, no markdown fences or extra text."""
 
@@ -80,8 +82,7 @@ Available actions and their param schemas:
 - select_all:     {{"x": int, "y": int}}  (clicks field then Cmd+A; omit x/y to apply to current focus)
 - file_select:    {{"file_path": "/path/to/file"}}  (for open/save file dialogs)
 - window_switch:  {{"app_name": "Safari"}}  (bring app to front via AppleScript; launches it if not already running)
-- navigate:       {{"url": "https://example.com"}}  (opens URL, domain, or search term via macOS open — works from any app, no window_switch needed first. Accepts: full URLs, bare domains like "docs.python.org", search terms like "python tutorial", mailto: links.)
-- compose_email:  {{"to": "user@example.com", "subject": "Subject line", "body": "Full email body text"}}  (opens a new compose window in the system default mail client via mailto:; subject and body are optional)
+- navigate:       {{"url": "https://example.com"}}  (opens URL, domain, or search term via macOS open — works from any app, no window_switch needed first. Accepts: full URLs, bare domains like "docs.python.org", search terms like "python tutorial", mailto: URIs.)
 - form_fill:      {{"fields": [{{"x": int, "y": int, "text": "value"}}, ...]}}
 - wait:           {{"seconds": 1.0}}
 - done:           {{}}  (set is_final: true)
@@ -115,6 +116,16 @@ GUIDELINES:
 - If the same action has failed multiple times, try a different approach entirely.
 - Set "confidence" to indicate how sure you are this action will succeed.
 - Provide a "fallback_action" if confidence is low or medium.
+- TASK COMPLETENESS: Only use "done" when the task is TRULY finished from
+  the user's perspective — every user-visible step completed. Sending an
+  email means: compose window open → fields filled → Send button clicked →
+  confirmation seen. Searching means: query typed → results visible.
+  Creating/saving a file means: file exists and is saved. When in doubt,
+  keep going rather than declaring done too early.
+- EXPAND BRIEF INSTRUCTIONS: Treat short instructions as high-level goals.
+  Think through all the implied steps before acting. A brief "send an email"
+  implies opening a mail client, composing a complete message, and sending
+  it — do all of that, not just part.
 
 Respond with ONLY valid JSON."""
 
