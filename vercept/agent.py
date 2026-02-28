@@ -213,6 +213,18 @@ class Agent:
                         + (f" (was: {original_reasoning})" if original_reasoning else "")
                     )
 
+            # Planning failed (JSON parse error, API error, etc.).
+            # Skip execution entirely and record as a real failure so that
+            # consecutive_failures increments.  Without this, a persistent
+            # planning failure returns a `wait` action whose heuristic always
+            # succeeds, keeping consecutive_failures at 0 forever.
+            if action.get("planning_failed"):
+                console.print("  [yellow]Planning error — will retry.[/yellow]")
+                time.sleep(2.0)
+                memory.add_action(action, result="planning_failed", success=False)
+                console.print()
+                continue
+
             action_type = action.get("action_type", "unknown")
             reasoning = action.get("reasoning", "")
             is_final = action.get("is_final", False)

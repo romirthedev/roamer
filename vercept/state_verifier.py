@@ -152,5 +152,21 @@ def quick_verify(
             "screen_changed": False,
         }
 
-    # select_all, form_fill, file_select, window_switch, drag: let LLM verify
+    # window_switch: AppleScript activate either worked (screen changed) or
+    # the app wasn't found / was already front (screen unchanged).
+    if action_type == "window_switch":
+        if screen_changed:
+            app = action.get("params", {}).get("app_name", "app")
+            return {
+                "success": True,
+                "explanation": f"Switched to {app} — screen updated.",
+                "task_complete": False,
+                "confidence": "high",
+                "screen_changed": True,
+            }
+        # Screen didn't change — the app may already have been in front, or
+        # it failed to activate.  Let the LLM decide based on context.
+        return None
+
+    # select_all, form_fill, file_select, drag: let LLM verify
     return None

@@ -101,8 +101,10 @@ class Executor:
     def _click(
         self, params: dict, screen_width: int, screen_height: int
     ) -> str:
+        if "x" not in params or "y" not in params:
+            return "click: missing x or y coordinate — cannot click without a target"
         x, y = self._scale_coords(
-            params.get("x", 0), params.get("y", 0), screen_width, screen_height
+            int(params["x"]), int(params["y"]), screen_width, screen_height
         )
         button = params.get("button", "left")
         clicks = params.get("clicks", 1)
@@ -112,8 +114,10 @@ class Executor:
     def _double_click(
         self, params: dict, screen_width: int, screen_height: int
     ) -> str:
+        if "x" not in params or "y" not in params:
+            return "double_click: missing x or y coordinate"
         x, y = self._scale_coords(
-            params.get("x", 0), params.get("y", 0), screen_width, screen_height
+            int(params["x"]), int(params["y"]), screen_width, screen_height
         )
         pyautogui.doubleClick(x=x, y=y)
         return f"double_clicked ({x}, {y})"
@@ -121,8 +125,10 @@ class Executor:
     def _right_click(
         self, params: dict, screen_width: int, screen_height: int
     ) -> str:
+        if "x" not in params or "y" not in params:
+            return "right_click: missing x or y coordinate"
         x, y = self._scale_coords(
-            params.get("x", 0), params.get("y", 0), screen_width, screen_height
+            int(params["x"]), int(params["y"]), screen_width, screen_height
         )
         pyautogui.rightClick(x=x, y=y)
         return f"right_clicked ({x}, {y})"
@@ -130,8 +136,10 @@ class Executor:
     def _triple_click(
         self, params: dict, screen_width: int, screen_height: int
     ) -> str:
+        if "x" not in params or "y" not in params:
+            return "triple_click: missing x or y coordinate"
         x, y = self._scale_coords(
-            params.get("x", 0), params.get("y", 0), screen_width, screen_height
+            int(params["x"]), int(params["y"]), screen_width, screen_height
         )
         pyautogui.click(x=x, y=y, clicks=3)
         return f"triple_clicked ({x}, {y})"
@@ -248,15 +256,18 @@ class Executor:
     def _drag(
         self, params: dict, screen_width: int, screen_height: int
     ) -> str:
+        for key in ("start_x", "start_y", "end_x", "end_y"):
+            if key not in params:
+                return f"drag: missing required param '{key}'"
         sx, sy = self._scale_coords(
-            params.get("start_x", 0),
-            params.get("start_y", 0),
+            int(params["start_x"]),
+            int(params["start_y"]),
             screen_width,
             screen_height,
         )
         ex, ey = self._scale_coords(
-            params.get("end_x", 0),
-            params.get("end_y", 0),
+            int(params["end_x"]),
+            int(params["end_y"]),
             screen_width,
             screen_height,
         )
@@ -386,9 +397,16 @@ class Executor:
         if not url:
             return "navigate: no url specified"
 
-        # Bare search terms get wrapped in a Google search URL so `open` has
-        # a valid target.  Recognized URL schemes pass through unchanged.
-        if not any(url.startswith(p) for p in self._KNOWN_SCHEMES):
+        # Routing logic (evaluated in order):
+        # 1. Recognized scheme (http/https/file/mailto) → use as-is
+        # 2. Looks like a hostname/path (no spaces, contains "." or is localhost)
+        #    → prepend https://  e.g. "docs.python.org" → "https://docs.python.org"
+        # 3. Everything else is a search term → wrap in Google search URL
+        if any(url.startswith(p) for p in self._KNOWN_SCHEMES):
+            pass  # already a valid URL
+        elif " " not in url and ("." in url or url.startswith("localhost")):
+            url = "https://" + url
+        else:
             url = "https://www.google.com/search?q=" + urllib.parse.quote_plus(url)
 
         try:
@@ -421,9 +439,10 @@ class Executor:
 
         query_parts: list[str] = []
         if subject:
-            query_parts.append("subject=" + urllib.parse.quote(subject))
+            # safe="" ensures all special chars (/, ?, &, etc.) are encoded
+            query_parts.append("subject=" + urllib.parse.quote(subject, safe=""))
         if body:
-            query_parts.append("body=" + urllib.parse.quote(body))
+            query_parts.append("body=" + urllib.parse.quote(body, safe=""))
 
         mailto_url = "mailto:" + urllib.parse.quote(to, safe="@,")
         if query_parts:
