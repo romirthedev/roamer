@@ -41,7 +41,6 @@ class Executor:
             "file_select": lambda: self._file_select(params),
             "window_switch": lambda: self._window_switch(params),
             "navigate": lambda: self._navigate(params),
-            "compose_email": lambda: self._compose_email(params),
             "form_fill": lambda: self._form_fill(params, screen_width, screen_height),
             "wait": lambda: self._wait(params),
             "done": lambda: "task_complete",
@@ -420,42 +419,6 @@ class Executor:
             return "navigate: open command timed out"
         except Exception as e:
             return f"navigate error: {e}"
-
-    def _compose_email(self, params: dict) -> str:
-        """Open a new email compose window via a mailto: URI.
-
-        Uses the macOS `open` command to hand the mailto: link to the system's
-        default mail client — works with Apple Mail, Outlook, Spark, or any
-        other configured client without hardcoding app-specific behaviour.
-        """
-        import urllib.parse
-
-        to = params.get("to", "")
-        if not to:
-            return "compose_email: no recipient (to) specified"
-
-        subject = params.get("subject", "")
-        body = params.get("body", "")
-
-        query_parts: list[str] = []
-        if subject:
-            # safe="" ensures all special chars (/, ?, &, etc.) are encoded
-            query_parts.append("subject=" + urllib.parse.quote(subject, safe=""))
-        if body:
-            query_parts.append("body=" + urllib.parse.quote(body, safe=""))
-
-        mailto_url = "mailto:" + urllib.parse.quote(to, safe="@,")
-        if query_parts:
-            mailto_url += "?" + "&".join(query_parts)
-
-        try:
-            subprocess.run(["open", mailto_url], timeout=10, check=True)
-            time.sleep(1.5)
-            return f"compose_email: to={to} subject={subject!r}"
-        except subprocess.TimeoutExpired:
-            return "compose_email: open command timed out"
-        except Exception as e:
-            return f"compose_email error: {e}"
 
     # ── Form fill ───────────────────────────────────────────────────────
 

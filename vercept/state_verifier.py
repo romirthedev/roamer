@@ -126,13 +126,13 @@ def quick_verify(
         # Small or no change — let LLM decide (could be a miss-click)
         return None
 
-    # navigate / compose_email: the `open` subprocess is synchronous — if it
-    # raises the executor surfaces an error string.  But the browser activating
-    # is async: if the screen didn't change at all, the browser didn't come to
-    # front yet (or another app stayed on top).  Treat that as a failure so
+    # navigate: the `open` subprocess is synchronous — if it raises the
+    # executor surfaces an error string.  But the browser activating is async:
+    # if the screen didn't change at all, the browser didn't come to front yet
+    # (or another app stayed on top).  Treat that as a failure so
     # consecutive_failures accumulates and the planner tries a different approach
     # instead of issuing another navigate to the same URL.
-    if action_type in ("navigate", "compose_email"):
+    if action_type == "navigate":
         if screen_changed:
             return {
                 "success": True,
