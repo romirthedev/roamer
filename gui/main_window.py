@@ -3,12 +3,12 @@
 import base64
 import time
 
-from PyQt6.QtCore import Qt, QSize, pyqtSlot
-from PyQt6.QtGui import QPixmap, QColor, QPainter, QBrush, QPen, QKeySequence, QShortcut
+from PyQt6.QtCore import Qt, pyqtSlot
+from PyQt6.QtGui import QPixmap, QKeySequence, QShortcut
 from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QHBoxLayout, QVBoxLayout,
     QLabel, QPlainTextEdit, QPushButton, QScrollArea,
-    QFrame, QSizePolicy, QSpacerItem,
+    QFrame, QSizePolicy,
 )
 
 from gui.styles import (

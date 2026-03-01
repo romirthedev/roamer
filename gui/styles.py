@@ -34,7 +34,6 @@ QMainWindow, QDialog {{
 QWidget {{
     background-color: {CREAM};
     color: {BLACK};
-    font-family: -apple-system, "SF Pro Text", "Helvetica Neue", Arial, sans-serif;
     font-size: 13px;
 }}
 
